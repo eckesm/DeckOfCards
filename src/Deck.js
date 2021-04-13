@@ -6,8 +6,9 @@ import './Deck.css';
 const Deck = ({ deckCount = 1 }) => {
 	const [ deckId, setDeckId ] = useState(null);
 	const [ cards, setCards ] = useState([]);
-	const [ remaining, setRemaining ] = useState(null);
 	const [ drawingCards, setDrawingCards ] = useState(false);
+	const [ finished, setFinished ] = useState(false);
+	let timerId = useRef(null);
 
 	useEffect(
 		() => {
@@ -15,39 +16,54 @@ const Deck = ({ deckCount = 1 }) => {
 				const res = await axios.get(`https://deckofcardsapi.com/api/deck/new/shuffle/?deck_count=${deckCount}`);
 				setDeckId(res.data.deck_id);
 				setCards([]);
-				setRemaining(res.data.remaining);
 			}
 			getNewDeck();
 		},
-		[ deckCount ]
+		[ setDeckId, deckCount ]
 	);
 
-	let timerId = useRef();
-
-	const startDrawingCards = () => {
-		setDrawingCards(true);
-		timerId.current = setInterval(() => {
-			drawCard();
-		}, 1000);
+	const toggleDrawingCards = () => {
+		if (finished) {
+			alert('There are no cards left in the deck.');
+		}
+		else {
+			setDrawingCards(!drawingCards);
+		}
 	};
 
-	const stopDrawingCards = () => {
-		setDrawingCards(false);
-		clearInterval(timerId.current);
-	};
+	useEffect(
+		() => {
+			async function drawCard() {
+				const res = await axios.get(`https://deckofcardsapi.com/api/deck/${deckId}/draw/?count=1
+      `);
 
-	async function drawCard() {
-		const res = await axios.get(`https://deckofcardsapi.com/api/deck/${deckId}/draw/?count=1
-    `);
-		const newCard = res.data.cards[0];
-		setRemaining(res.data.remaining);
-		const leftOffset = ((deckCount * 52 - res.data.remaining - 1) % 13) * 30 + 25;
-		const topOffset = (deckCount * 52 / 13 - Math.floor(res.data.remaining / 13)) * 90;
-		setCards(cards => [ ...cards, { ...newCard, leftOffset: leftOffset, topOffset: topOffset } ]);
-    if (res.data.remaining===0){
-      clearInterval(timerId.current)
-    }
-	}
+				const remaining = res.data.remaining;
+				const newCard = res.data.cards[0];
+				const leftOffset = ((deckCount * 52 - remaining - 1) % 13) * 30 + 25;
+				const topOffset = (deckCount * 52 / 13 - Math.floor(remaining / 13)) * 90;
+
+				setCards(cards => [ ...cards, { ...newCard, leftOffset: leftOffset, topOffset: topOffset } ]);
+
+				if (remaining === 0) {
+					clearInterval(timerId.current);
+					setDrawingCards(false);
+					setFinished(true);
+				}
+			}
+
+			if (drawingCards && !timerId.current) {
+				timerId.current = setInterval(async () => {
+					await drawCard();
+				}, 1000);
+			}
+
+			return () => {
+				clearInterval(timerId.current);
+				timerId.current = null;
+			};
+		},
+		[ drawingCards, setDrawingCards, deckCount, deckId ]
+	);
 
 	const components = cards.map(card => (
 		<Card
@@ -64,21 +80,14 @@ const Deck = ({ deckCount = 1 }) => {
 	return (
 		<div className="Deck">
 			{!deckId && <h3>...loading new deck...</h3>}
-			{deckId &&
-			remaining !== 0 &&
-			!drawingCards && (
-				<button className="Deck-drawCard_button" onClick={startDrawingCards}>
-					Start Drawing Cards from Deck!
+
+			{finished ? (
+				<h3>There are no more cards in the deck.</h3>
+			) : deckId && (
+				<button className="Deck-drawCard_button" onClick={toggleDrawingCards}>
+					{drawingCards ? 'Stop' : 'Start'} Drawing Cards from Deck!
 				</button>
 			)}
-			{deckId &&
-			remaining !== 0 &&
-			drawingCards && (
-				<button className="Deck-drawCard_button" onClick={stopDrawingCards}>
-					Stop Drawing Cards from Deck!
-				</button>
-			)}
-			{deckId && remaining === 0 && <h3>There are no cards remaining!</h3>}
 
 			<div className="Deck-cards_played">{components}</div>
 		</div>
